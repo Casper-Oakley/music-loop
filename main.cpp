@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
+#include <fftw3.h>
 #include "libs/portaudio.h"
 
 #define NUM_CHANNELS (2)
-#define NUM_SECONDS (2)
+#define NUM_SECONDS (1)
 #define SAMPLE_RATE (44100)
+#define NUM_BINS (256)
 /* Select sample format. */
 #if 1
 #define PA_SAMPLE_TYPE  paFloat32
@@ -39,9 +42,13 @@ typedef struct
 {
     int frameIndex;
     int maxFrameIndex;
-    SAMPLE *recordedSamples;
+    fftw_complex *recordedSamples;
+    fftw_complex *fftwOutput;
 }   
 paTestData;
+
+//Plan global
+fftw_plan p;
 
 static int patestCallback( const void *inputBuffer, void *outputBuffer,
                            unsigned long framesPerBuffer,
@@ -51,7 +58,7 @@ static int patestCallback( const void *inputBuffer, void *outputBuffer,
 {
     paTestData *data = (paTestData*)userData;
     const SAMPLE *rptr = (const SAMPLE*)inputBuffer;
-    SAMPLE *wptr = &data->recordedSamples[data->frameIndex * NUM_CHANNELS];
+    fftw_complex *wptr = &data->recordedSamples[data->frameIndex * NUM_CHANNELS];
     long framesToCalc;
     long i;
     int finished;
@@ -77,20 +84,27 @@ static int patestCallback( const void *inputBuffer, void *outputBuffer,
     {
         for( i=0; i<framesToCalc; i++ )
         {
-            *wptr++ = SAMPLE_SILENCE;  /* left */
-            if( NUM_CHANNELS == 2 ) *wptr++ = SAMPLE_SILENCE;  /* right */
+            *wptr[0] = SAMPLE_SILENCE;  /* left */
+            wptr++;
+            if( NUM_CHANNELS == 2 ) {
+              *wptr[0] = SAMPLE_SILENCE;
+              wptr++;
+            }
         }
     }
     else
     {
         for( i=0; i<framesToCalc; i++ )
         {
-            *wptr++ = *rptr++;  /* left */
-            if( NUM_CHANNELS == 2 ) *wptr++ = *rptr++;  /* right */
+            *wptr[0] = *rptr++;  /* left */
+            wptr++;
+            if( NUM_CHANNELS == 2 ) {
+              *wptr[0] = *rptr++;
+              wptr++;
+            }
         }
     }
     data->frameIndex += framesToCalc;
-    printf("%d\n", data->frameIndex);
     return finished;
 }
 
@@ -115,7 +129,7 @@ int main(int argc, char* argv[]) {
     int                 totalFrames;
     int                 numSamples;
     int                 numBytes;
-    SAMPLE              max, val;
+    fftw_complex              max, val;
     double              average;
 
     printf("patest_record.c\n"); fflush(stdout);
@@ -123,15 +137,22 @@ int main(int argc, char* argv[]) {
     data.maxFrameIndex = totalFrames = NUM_SECONDS * SAMPLE_RATE; /* Record for a few seconds. */
     data.frameIndex = 0;
     numSamples = totalFrames * NUM_CHANNELS;
-    numBytes = numSamples * sizeof(SAMPLE);
-    data.recordedSamples = (SAMPLE *) malloc( numBytes ); /* From now on, recordedSamples is initialised. */
+    numBytes = numSamples * sizeof(fftw_complex);
+    data.recordedSamples = (fftw_complex *) fftw_malloc( numBytes ); /* From now on, recordedSamples is initialised. */
+    data.fftwOutput = (fftw_complex *) fftw_malloc( numBytes );
     if( data.recordedSamples == NULL )
     {
         printf("Could not allocate record array.\n");
         error(err);
         return 1;
     }
-    for( i=0; i<numSamples; i++ ) data.recordedSamples[i] = 0;
+    for( i=0; i<numSamples; i++ ) data.recordedSamples[i][0] = 0;
+
+    //Before we begin gathering sound data, create an fftw plan
+    printf("Generating fft plan. May take some time...\n");
+    p = fftw_plan_dft_1d(numSamples, data.recordedSamples, data.fftwOutput, FFTW_FORWARD, FFTW_MEASURE);
+    printf("Plan generated.\n");
+
 
     inputParameters.device = Pa_GetDefaultInputDevice();
     inputParameters.channelCount = 2;                    /* stereo input */
@@ -140,14 +161,6 @@ int main(int argc, char* argv[]) {
     inputParameters.hostApiSpecificStreamInfo = NULL;
 
     int numDevices = Pa_GetDeviceCount();
-
-    const   PaDeviceInfo *deviceInfo;
-    for(int i=0; i<numDevices; i++ )
-    {
-        deviceInfo = Pa_GetDeviceInfo( i );
-        printf("%s\n", deviceInfo->name);
-        printf("%d\n", deviceInfo->maxOutputChannels);
-    }
 
     PaStream *stream;
     /* Open an audio I/O stream. */
@@ -166,20 +179,32 @@ int main(int argc, char* argv[]) {
     }
 
     err = Pa_StartStream( stream );
-    if( err != paNoError) {
-        error(err);
-        return 1;
+
+    double sum[NUM_BINS];
+
+    while(1){
+        err = Pa_StopStream( stream );
+        data.frameIndex = 0;
+        err = Pa_StartStream( stream );
+        for(int i=0;i<NUM_BINS;i++){
+            sum[i] = 0;
+        }
+        Pa_Sleep(1000*NUM_SECONDS);
+        fftw_execute(p);
+        for(int i=0;i<totalFrames; i++) {
+            //downsample
+            int index = (int) floor(i*(float)NUM_BINS/(float)totalFrames);
+            sum[index] += data.fftwOutput[i][0];
+            //sum += data.fftwOutput[i][0];
+            
+        }
+        for(int i=0;i<NUM_BINS;i++){
+            printf("%f\n", sum[i]);
+        }
+        printf("\n\n\n\n\n\n");
     }
 
-    Pa_Sleep(1000*NUM_SECONDS);
 
-    double sum = 0;
-
-    for(int i=0;i<totalFrames; i++) {
-        sum += data.recordedSamples[i];
-    }
-
-    printf("%f\n", sum);
 
     err = Pa_StopStream( stream );
     if( err != paNoError) {
@@ -192,6 +217,10 @@ int main(int argc, char* argv[]) {
         error(err);
         return 1;
     }
+
+    //Once stopped and closed, destroy plan
+    fftw_destroy_plan(p);
+
 
     err = Pa_Terminate();
     if( err != paNoError) {
