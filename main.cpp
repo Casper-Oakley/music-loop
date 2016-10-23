@@ -1,7 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <fftw3.h>
+
+#include <amqp.h>
+#include <amqp_tcp_socket.h>
+#include <amqp_framing.h>
+
 #include "libs/portaudio.h"
 
 #define NUM_CHANNELS (2)
@@ -110,7 +116,34 @@ static int patestCallback( const void *inputBuffer, void *outputBuffer,
 
 
 int main(int argc, char* argv[]) {
-    printf("Hello, World!");
+
+
+    printf("Starting connection to message broker...\n");
+    amqp_socket_t *socket = NULL;
+    amqp_connection_state_t conn;
+    int status;
+
+    conn = amqp_new_connection();
+
+    socket = amqp_tcp_socket_new(conn);
+    if(!socket) {
+        printf("Failed creating SSL/TLS socket\n");
+        return 1;
+    }
+
+    status = amqp_socket_open(socket, "localhost", 5672);
+
+    if(status) {
+        printf("Failed opening SSL/TLS connection\n");
+        return 1;
+    }
+
+    amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest");
+    amqp_channel_open(conn, 1);
+    amqp_get_rpc_reply(conn);
+    
+
+    printf("Initialising PortAudio...\n");
     PaError err;
     
     err = Pa_Initialize();
@@ -182,6 +215,7 @@ int main(int argc, char* argv[]) {
 
     double sum[NUM_BINS];
 
+    printf("Reading audio and sending results to message broker...\n");
     while(1){
         err = Pa_StopStream( stream );
         data.frameIndex = 0;
@@ -198,13 +232,41 @@ int main(int argc, char* argv[]) {
             //sum += data.fftwOutput[i][0];
             
         }
-        for(int i=0;i<NUM_BINS;i++){
-            printf("%f\n", sum[i]);
+
+        //Give enough space for all numbers plus commas
+        char* messagebody = (char*) malloc(16*sizeof(char)*(NUM_BINS));
+        memset(messagebody, 0, 16*NUM_BINS);
+        char currentbin[16];
+        memset(currentbin, 0, 16);
+        for(int i=0;i<NUM_BINS-1;i++){
+            snprintf(currentbin, 16, "%f,", sum[i]);
+            messagebody = strcat(messagebody, currentbin);
         }
-        printf("\n\n\n\n\n\n");
+
+        snprintf(currentbin, 16, "%f", sum[NUM_BINS-1]);
+        messagebody = strcat(messagebody, currentbin);
+
+        amqp_basic_properties_t props;
+        props._flags = AMQP_BASIC_CONTENT_TYPE_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG;
+        props.content_type = amqp_cstring_bytes("text/plain");
+        props.delivery_mode = 2; /* persistent delivery mode */
+
+        amqp_basic_publish(conn,
+            1,
+            amqp_cstring_bytes(""),
+            amqp_cstring_bytes("primary-queue"),
+            0,
+            0,
+            &props,
+            amqp_cstring_bytes(messagebody));
     }
 
+    //Terminate amqp connection
+    amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS);
+    amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
+    amqp_destroy_connection(conn);
 
+    //End portaudio bindings
 
     err = Pa_StopStream( stream );
     if( err != paNoError) {
