@@ -229,8 +229,6 @@ int main(int argc, char* argv[]) {
             //downsample
             int index = (int) floor(i*(float)NUM_BINS/(float)totalFrames);
             sum[index] += data.fftwOutput[i][0];
-            //sum += data.fftwOutput[i][0];
-            
         }
 
         //Give enough space for all numbers plus commas
@@ -239,6 +237,7 @@ int main(int argc, char* argv[]) {
         char currentbin[16];
         memset(currentbin, 0, 16);
         for(int i=0;i<NUM_BINS-1;i++){
+            sum[i] = 10 * log10((sum[i] * sum[i]));
             snprintf(currentbin, 16, "%f,", sum[i]);
             messagebody = strcat(messagebody, currentbin);
         }
