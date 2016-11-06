@@ -79,7 +79,7 @@ static int patestCallback( const void *inputBuffer, void *outputBuffer,
     if( framesLeft < framesPerBuffer )
     {
         framesToCalc = framesLeft;
-        finished = paComplete;
+        finished = paContinue;
     }
     else
     {
@@ -215,9 +215,7 @@ int main(int argc, char* argv[]) {
 
     printf("Reading audio and sending results to message broker...\n");
     while(1){
-        err = Pa_StopStream( stream );
         data.frameIndex = 0;
-        err = Pa_StartStream( stream );
         for(i=0;i<NUM_BINS;i++){
             sum[i] = 0;
         }
