@@ -11,11 +11,11 @@
 #include "libs/portaudio.h"
 
 #define NUM_CHANNELS (2)
-#define NUM_SECONDS (1)
-#define SAMPLE_RATE (44100)
-#define NUM_BINS (256)
+#define NUM_SECONDS (0.1)
+#define SAMPLE_RATE (8000)
+#define NUM_BINS (32)
 /* Select sample format. */
-#if 1
+#if 0
 #define PA_SAMPLE_TYPE  paFloat32
 typedef float SAMPLE;
 #define SAMPLE_SILENCE  (0.0f)
@@ -155,15 +155,12 @@ int main(int argc, char* argv[]) {
 
     printf( "PortAudio version: 0x%08X\n", Pa_GetVersion());
 
-    PaStreamParameters  inputParameters,
-    outputParameters;
+    PaStreamParameters  inputParameters;
     paTestData          data;
     int                 i;
     int                 totalFrames;
     int                 numSamples;
     int                 numBytes;
-    fftw_complex              max, val;
-    double              average;
 
     printf("patest_record.c\n"); fflush(stdout);
 
@@ -180,6 +177,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     for( i=0; i<numSamples; i++ ) data.recordedSamples[i][0] = 0;
+    for( i=0; i<numSamples; i++ ) data.recordedSamples[i][1] = 0;
 
     //Before we begin gathering sound data, create an fftw plan
     printf("Generating fft plan. May take some time...\n");
@@ -193,7 +191,6 @@ int main(int argc, char* argv[]) {
     inputParameters.suggestedLatency = Pa_GetDeviceInfo( inputParameters.device )->defaultLowInputLatency;
     inputParameters.hostApiSpecificStreamInfo = NULL;
 
-    int numDevices = Pa_GetDeviceCount();
 
     PaStream *stream;
     /* Open an audio I/O stream. */
@@ -220,16 +217,18 @@ int main(int argc, char* argv[]) {
         err = Pa_StopStream( stream );
         data.frameIndex = 0;
         err = Pa_StartStream( stream );
-        for(int i=0;i<NUM_BINS;i++){
+        for(i=0;i<NUM_BINS;i++){
             sum[i] = 0;
         }
         Pa_Sleep(1000*NUM_SECONDS);
         fftw_execute(p);
-        for(int i=0;i<totalFrames; i++) {
+        for(i=1;i<totalFrames; i++) {
             //downsample
             int index = (int) floor(i*(float)NUM_BINS/(float)totalFrames);
             sum[index] += data.fftwOutput[i][0];
+            sum[index] += data.fftwOutput[i][1];
         }
+        //printf("%f\n", sum[(int) floor((totalFrames-1)*(float)NUM_BINS/(float)totalFrames)]);
 
         //Give enough space for all numbers plus commas
         char* messagebody = (char*) malloc(16*sizeof(char)*(NUM_BINS));
@@ -238,10 +237,18 @@ int main(int argc, char* argv[]) {
         memset(currentbin, 0, 16);
         for(int i=0;i<NUM_BINS-1;i++){
             sum[i] = 10 * log10((sum[i] * sum[i]));
+            //Case for where sum is zero, log returns -inf
+            if(isinf(sum[i])) {
+              sum[i] = 0.0;
+            }
             snprintf(currentbin, 16, "%f,", sum[i]);
             messagebody = strcat(messagebody, currentbin);
         }
-
+        sum[NUM_BINS-1] = 10 * log10((sum[NUM_BINS-1] * sum[NUM_BINS-1]));
+        //Case for where sum is zero, log returns -inf
+        if(isinf(sum[NUM_BINS-1])) {
+          sum[NUM_BINS-1] = 0.0;
+        }
         snprintf(currentbin, 16, "%f", sum[NUM_BINS-1]);
         messagebody = strcat(messagebody, currentbin);
 
