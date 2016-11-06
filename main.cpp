@@ -11,7 +11,7 @@
 #include "libs/portaudio.h"
 
 #define NUM_CHANNELS (2)
-#define NUM_SECONDS (0.1)
+#define NUM_SECONDS (0.05)
 #define SAMPLE_RATE (8000)
 #define NUM_BINS (32)
 #define SMOOTH_FACTOR (0.8)
@@ -21,7 +21,7 @@
 typedef float SAMPLE;
 #define SAMPLE_SILENCE  (0.0f)
 #define PRINTF_S_FORMAT "%.8f"
-#elif 0
+#elif 1
 #define PA_SAMPLE_TYPE  paInt16
 typedef short SAMPLE;
 #define SAMPLE_SILENCE  (0)
@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     for( i=0; i<numSamples; i++ ) data.recordedSamples[i][0] = 0;
-    for( i=0; i<numSamples; i++ ) data.recordedSamples[i][1] = 0;
+    //for( i=0; i<numSamples; i++ ) data.recordedSamples[i][1] = 0;
 
     //Before we begin gathering sound data, create an fftw plan
     printf("Generating fft plan. May take some time...\n");
@@ -224,8 +224,7 @@ int main(int argc, char* argv[]) {
         for(i=1;i<totalFrames; i++) {
             //downsample to amount of LEDs
             int index = (int) floor(i*(float)NUM_BINS/(float)totalFrames);
-            sum[index] += data.fftwOutput[i][0];
-            sum[index] += data.fftwOutput[i][1];
+            sum[index] += sqrt(data.fftwOutput[i][0]*data.fftwOutput[i][0] + data.fftwOutput[i][1]*data.fftwOutput[i][1]);
         }
 
         //Add some white noise to drown out background noises
@@ -242,6 +241,21 @@ int main(int argc, char* argv[]) {
             if(isinf(sum[i])) {
               sum[i] = 0.0;
             }
+        }
+
+        //Scale the results to the range 0-1
+        float max = 0, min = 100000;
+        for(i=0; i<NUM_BINS; i++) {
+          if(sum[i] > max) {
+            max = sum[i];
+          }
+          if(sum[i] < min) {
+            min = sum[i];
+          }
+        }
+
+        for(i=0; i< NUM_BINS; i++) {
+          sum[i] = ((float) abs(sum[i] - min)) / abs(max - min);
         }
 
         //Smooth the results
