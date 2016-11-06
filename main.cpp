@@ -223,12 +223,18 @@ int main(int argc, char* argv[]) {
         Pa_Sleep(1000*NUM_SECONDS);
         fftw_execute(p);
         for(i=1;i<totalFrames; i++) {
-            //downsample
+            //downsample to amount of LEDs
             int index = (int) floor(i*(float)NUM_BINS/(float)totalFrames);
             sum[index] += data.fftwOutput[i][0];
             sum[index] += data.fftwOutput[i][1];
         }
-        //printf("%f\n", sum[(int) floor((totalFrames-1)*(float)NUM_BINS/(float)totalFrames)]);
+
+        //Add some white noise to drown out background noises
+        for(i=0; i<NUM_BINS; i++){
+            if(sum[i]) {
+              sum[i] += 50;
+            }
+        }
 
         //Give enough space for all numbers plus commas
         char* messagebody = (char*) malloc(16*sizeof(char)*(NUM_BINS));
