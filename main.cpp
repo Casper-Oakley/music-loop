@@ -14,6 +14,7 @@
 #define NUM_SECONDS (0.1)
 #define SAMPLE_RATE (8000)
 #define NUM_BINS (32)
+#define SMOOTH_FACTOR (0.8)
 /* Select sample format. */
 #if 0
 #define PA_SAMPLE_TYPE  paFloat32
@@ -236,24 +237,29 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        //Give enough space for all numbers plus commas
-        char* messagebody = (char*) malloc(16*sizeof(char)*(NUM_BINS));
-        memset(messagebody, 0, 16*NUM_BINS);
-        char currentbin[16];
-        memset(currentbin, 0, 16);
-        for(int i=0;i<NUM_BINS-1;i++){
+        //Stretch the results to better fit human hearing
+        for(i=0; i<NUM_BINS; i++) {
             sum[i] = 10 * log10((sum[i] * sum[i]));
             //Case for where sum is zero, log returns -inf
             if(isinf(sum[i])) {
               sum[i] = 0.0;
             }
+        }
+
+        //Smooth the results
+        for(i=1; i<NUM_BINS; i++) {
+          sum[i] = SMOOTH_FACTOR * sum[i] + (1 - SMOOTH_FACTOR) * sum[i-1];
+        }
+
+        //Give enough space for all numbers plus commas
+        char* messagebody = (char*) malloc(16*sizeof(char)*(NUM_BINS));
+        memset(messagebody, 0, 16*NUM_BINS);
+        char currentbin[16];
+        memset(currentbin, 0, 16);
+        //Build message by concatenating strings
+        for(int i=0;i<NUM_BINS-1;i++){
             snprintf(currentbin, 16, "%f,", sum[i]);
             messagebody = strcat(messagebody, currentbin);
-        }
-        sum[NUM_BINS-1] = 10 * log10((sum[NUM_BINS-1] * sum[NUM_BINS-1]));
-        //Case for where sum is zero, log returns -inf
-        if(isinf(sum[NUM_BINS-1])) {
-          sum[NUM_BINS-1] = 0.0;
         }
         snprintf(currentbin, 16, "%f", sum[NUM_BINS-1]);
         messagebody = strcat(messagebody, currentbin);
