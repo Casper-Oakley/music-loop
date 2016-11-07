@@ -255,7 +255,12 @@ int main(int argc, char* argv[]) {
         }
 
         for(i=0; i< NUM_BINS; i++) {
-          sum[i] = ((float) abs(sum[i] - min)) / abs(max - min);
+          //Case for where the max is the min is zero
+          if(max == 0) {
+            sum[i] = 0;
+          } else {
+            sum[i] = ((float) abs(sum[i] - min)) / abs(max - min);
+          }
         }
 
         //Smooth the results
