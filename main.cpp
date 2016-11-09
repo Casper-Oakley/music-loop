@@ -263,10 +263,16 @@ int main(int argc, char* argv[]) {
           }
         }
 
+        //Square results so bright is brighter and dim is dimmer
+        for(i=0; i< NUM_BINS; i++) {
+          sum[i] = sum[i] * sum[i];
+        }
+
         //Smooth the results
         for(i=1; i<NUM_BINS; i++) {
           sum[i] = SMOOTH_FACTOR * sum[i] + (1 - SMOOTH_FACTOR) * sum[i-1];
         }
+
 
         //Give enough space for all numbers plus commas
         char* messagebody = (char*) malloc(16*sizeof(char)*(NUM_BINS));
