@@ -10,7 +10,7 @@
 
 #include "libs/portaudio.h"
 
-#define NUM_CHANNELS (2)
+#define NUM_CHANNELS (4)
 #define NUM_SECONDS (0.05)
 #define SAMPLE_RATE (8000)
 #define NUM_BINS (32)
@@ -178,7 +178,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     for( i=0; i<numSamples; i++ ) data.recordedSamples[i][0] = 0;
-    //for( i=0; i<numSamples; i++ ) data.recordedSamples[i][1] = 0;
 
     //Before we begin gathering sound data, create an fftw plan
     printf("Generating fft plan. May take some time...\n");
@@ -224,7 +223,8 @@ int main(int argc, char* argv[]) {
         for(i=1;i<totalFrames; i++) {
             //downsample to amount of LEDs
             int index = (int) floor(i*(float)NUM_BINS/(float)totalFrames);
-            sum[index] += sqrt(data.fftwOutput[i][0]*data.fftwOutput[i][0] + data.fftwOutput[i][1]*data.fftwOutput[i][1]);
+            //Log10 to tretch the results to better fit human hearing
+            sum[index] += log10(data.fftwOutput[i][0]*data.fftwOutput[i][0] + data.fftwOutput[i][1]*data.fftwOutput[i][1]);
         }
 
         //Add some white noise to drown out background noises
@@ -234,9 +234,8 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        //Stretch the results to better fit human hearing
+        //Remove any invalid values
         for(i=0; i<NUM_BINS; i++) {
-            sum[i] = 10 * log10((sum[i] * sum[i]));
             //Case for where sum is zero, log returns -inf
             if(isinf(sum[i])) {
               sum[i] = 0.0;
